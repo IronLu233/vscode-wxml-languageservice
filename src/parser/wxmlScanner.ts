@@ -108,7 +108,7 @@ class MultiLineStream {
         ;
         i < ch.length && this.source.charCodeAt(this.position + i) === ch[i];
         i++
-      ) {}
+      ) { }
       if (i === ch.length) {
         return true;
       }
@@ -142,6 +142,8 @@ const _BNG = "!".charCodeAt(0);
 const _MIN = "-".charCodeAt(0);
 const _LAN = "<".charCodeAt(0);
 const _RAN = ">".charCodeAt(0);
+const _LBR = "{".charCodeAt(0);
+const _RBR = "}".charCodeAt(0);
 const _FSL = "/".charCodeAt(0);
 const _EQS = "=".charCodeAt(0);
 const _DQO = '"'.charCodeAt(0);
@@ -151,6 +153,8 @@ const _CAR = "\r".charCodeAt(0);
 const _LFD = "\f".charCodeAt(0);
 const _WSP = " ".charCodeAt(0);
 const _TAB = "\t".charCodeAt(0);
+
+const MustacheInnardsRegexp = /(?:(?:'.+')|(?:".+")|[^{}])+(?=\s}})/;
 
 const htmlScriptContents: { [key: string]: boolean } = {
   "text/x-handlebars-template": true
@@ -163,6 +167,7 @@ export function createScanner(
 ): Scanner {
   let stream = new MultiLineStream(input, initialOffset);
   let state = initialState;
+  let stateBeforeMustache = initialState;
   let tokenOffset: number = 0;
   let tokenType: TokenType = TokenType.Unknown;
   let tokenError: string | undefined;
@@ -200,11 +205,11 @@ export function createScanner(
     if (token !== TokenType.EOS && offset === stream.pos()) {
       console.log(
         "Scanner.scan has not advanced at offset " +
-          offset +
-          ", state before: " +
-          oldState +
-          " after: " +
-          state
+        offset +
+        ", state before: " +
+        oldState +
+        " after: " +
+        state
       );
       stream.advance(1);
       return finishToken(offset, TokenType.Unknown);
@@ -248,7 +253,14 @@ export function createScanner(
           state = ScannerState.AfterOpeningStartTag;
           return finishToken(offset, TokenType.StartTagOpen);
         }
-        stream.advanceUntilChar(_LAN);
+        if (stream.advanceIfChars([_LBR, _LBR])) {
+          // {{
+          stateBeforeMustache = state;
+          state = ScannerState.AfterOpeningMustache;
+          return finishToken(offset, TokenType.MustacheOpen);
+        }
+
+        stream.advanceUntilRegExp(/{|</);
         return finishToken(offset, TokenType.Content);
       case ScannerState.AfterOpeningEndTag:
         let tagName = nextElementName();
@@ -387,6 +399,38 @@ export function createScanner(
         return internalScan(); // no advance yet - jump to WithinTag
       // 删掉了WithinScriptContent
       // 删掉了WithinStyleContent
+
+      case ScannerState.AfterOpeningMustache:
+        if (stateBeforeMustache === initialState || stateBeforeMustache === ScannerState.WithinContent) {
+          if (stream.skipWhitespace()) {
+            return finishToken(offset, TokenType.Whitespace);
+          }
+
+          if (stream.advanceIfRegExp(MustacheInnardsRegexp)) {
+            // expression between `{{` and `}}`
+            state = ScannerState.WithinMustache;
+            return finishToken(offset, TokenType.Mustache);
+          }
+
+          return finishToken(
+            offset,
+            TokenType.Unknown,
+            "未匹配到`}}`以完成数据绑定"
+          );
+        }
+      case ScannerState.WithinMustache:
+        if (stateBeforeMustache === initialState ||
+          stateBeforeMustache === ScannerState.WithinContent) {
+          if (stream.skipWhitespace()) {
+            return finishToken(offset, TokenType.Whitespace);
+          }
+
+          if (stream.advanceIfChars([_RBR, _RBR])) {
+            // }}
+            state = ScannerState.WithinContent;
+            return finishToken(offset, TokenType.MustacheClose);
+          }
+        }
     }
 
     stream.advance(1);

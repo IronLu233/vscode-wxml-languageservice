@@ -150,18 +150,6 @@ suite("WXML Scanner", () => {
     ]);
   });
 
-  test("bug 9809 - Complete Start Tag with Namespaceprefix", () => {
-    assertTokens([
-      {
-        input: "<foo:bar>",
-        tokens: [
-          { offset: 0, type: TokenType.StartTagOpen },
-          { offset: 1, type: TokenType.StartTag, content: "foo:bar" },
-          { offset: 8, type: TokenType.StartTagClose }
-        ]
-      }
-    ]);
-  });
 
   test("Complete End Tag", () => {
     assertTokens([
@@ -478,6 +466,21 @@ suite("WXML Scanner", () => {
           { offset: 0, type: TokenType.StartCommentTag },
           { offset: 4, type: TokenType.Comment },
           { offset: 19, type: TokenType.EndCommentTag }
+        ]
+      }
+    ]);
+  });
+
+  test("Simple Mustaches 1", () => {
+    assertTokens([
+      {
+        input: "{{ foo }}",
+        tokens: [
+          { offset: 0, type: TokenType.MustacheOpen },
+          { offset: 2, type: TokenType.Whitespace },
+          { offset: 3, type: TokenType.Mustache },
+          { offset: 6, type: TokenType.Whitespace },
+          { offset: 7, type: TokenType.MustacheClose }
         ]
       }
     ]);
